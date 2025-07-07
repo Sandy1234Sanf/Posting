@@ -23,7 +23,7 @@ if hasattr(ssl, '_create_unverified_context'):
 
 
 # Import configuration and state manager
-from Test import (
+from config import (
     OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME,
     OPENROUTER_MISTRAL_API_KEY, OPENROUTER_MISTRAL_MODEL,
     OPENROUTER_DEEPSEEK_R1_API_KEY, OPENROUTER_DEEPSEEK_R1_MODEL,DIVIDER_LINE_THICKNESS,DIVIDER_Y_OFFSET_FROM_SUMMARY, # Corrected typo here
