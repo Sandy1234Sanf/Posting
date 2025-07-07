@@ -2,7 +2,7 @@
 import json
 import os
 from datetime import datetime, timedelta, UTC
-from Test import JSON_OUTPUT_DIR, CONTENT_TYPE_CYCLE, WEEKLY_ANALYSIS_INTERVAL_DAYS, INSTAGRAM_ANALYSIS_INTERVAL_DAYS, EXTERNAL_INSTAGRAM_ANALYSIS_INTERVAL_DAYS # Import new intervals
+from config import JSON_OUTPUT_DIR, CONTENT_TYPE_CYCLE, WEEKLY_ANALYSIS_INTERVAL_DAYS, INSTAGRAM_ANALYSIS_INTERVAL_DAYS, EXTERNAL_INSTAGRAM_ANALYSIS_INTERVAL_DAYS # Import new intervals
 
 class WorkflowStateManager:
     """Manages the state of the content generation workflow."""
