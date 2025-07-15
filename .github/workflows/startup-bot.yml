@@ -28,6 +28,7 @@ jobs:
 
       - name: Run bot script
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MISTRAL_API_KEY: ${{ secrets.OPENROUTER_MISTRAL_API_KEY }}
           OPENROUTER_DEEPSEEK_R1_API_KEY: ${{ secrets.OPENROUTER_DEEPSEEK_R1_API_KEY }}
