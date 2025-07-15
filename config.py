@@ -5,7 +5,17 @@ import os
 # --- API Keys ---
 # WARNING: Embedding API keys directly in code is NOT recommended for production environments.
 # For better security, always use environment variables or a more secure secrets management solution.
-#import os
+
+# --- NEW: Hugging Face Configuration ---
+# The script will use the HF_TOKEN secret from your GitHub repository settings or a local .env file.
+HUGGING_FACE_TOKEN = os.getenv("HF_TOKEN", "YOUR_HUGGING_FACE_TOKEN")
+INFERENCE_API_ENDPOINTS = [
+    "https://api-inference.huggingface.co/models/black-forest-labs/FLUX.1-schnell",
+    "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-3-medium-diffusers",
+    "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0",
+    "https://api-inference.huggingface.co/models/runwayml/stable-diffusion-v1-5",
+    "https://api-inference.huggingface.co/models/CompVis/stable-diffusion-v1-4"
+]
 
 # --- API Keys (from environment variables) ---
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
