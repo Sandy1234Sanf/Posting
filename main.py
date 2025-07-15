@@ -26,7 +26,8 @@ if hasattr(ssl, '_create_unverified_context'):
 from config import (
     OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME,
     OPENROUTER_MISTRAL_API_KEY, OPENROUTER_MISTRAL_MODEL,
-    OPENROUTER_DEEPSEEK_R1_API_KEY, OPENROUTER_DEEPSEEK_R1_MODEL,DIVIDER_LINE_THICKNESS,DIVIDER_Y_OFFSET_FROM_SUMMARY, # Corrected typo here
+    OPENROUTER_DEEPSEEK_R1_API_KEY, OPENROUTER_DEEPSEEK_R1_MODEL,DIVIDER_LINE_THICKNESS,DIVIDER_Y_OFFSET_FROM_SUMMARY,
+    HUGGING_FACE_TOKEN, INFERENCE_API_ENDPOINTS, # NEW: Hugging Face config
     PEXELS_API_KEY, PEXELS_API_URL,
     UNSPLASH_ACCESS_KEY, UNSPLASH_API_URL,
     OPENVERSE_API_URL,
@@ -56,7 +57,7 @@ from config import (
     SUMMARY_TOP_MARGIN_FROM_TITLE, SUMMARY_MIN_WORDS, SUMMARY_MAX_WORDS, SUMMARY_LINE_SPACING, SUMMARY_MAX_LINES,
     LOGO_PATH, LOGO_WIDTH, LOGO_HEIGHT, LOGO_BOTTOM_MARGIN,
     QUOTE_LOGO_WIDTH, QUOTE_LOGO_HEIGHT, QUOTE_LOGO_BOTTOM_MARGIN,
-    QUOTE_BOX_HEIGHT, QUOTE_BOX_MARGIN_FROM_DIVIDER, QUOTE_TEXT_PADDING_X, QUOTE_TEXT_PADDING_Y, QUOTE_BOX_RADIUS, # Re-added for import
+    QUOTE_BOX_HEIGHT, QUOTE_BOX_MARGIN_FROM_DIVIDER, QUOTE_TEXT_PADDING_X, QUOTE_TEXT_PADDING_Y, QUOTE_BOX_RADIUS,
     CONTENT_TYPE_CYCLE
 )
 from state_manager import WorkflowStateManager
@@ -160,16 +161,14 @@ class NewsFetcher:
             time_threshold = datetime.now(UTC) - timedelta(hours=time_window_hours)
 
             for entry in feed.entries:
-                # Ensure published_dt_candidate is always assigned a datetime object
-                published_dt_candidate = None # Use a candidate variable name
+                published_dt_candidate = None
                 if hasattr(entry, 'published_parsed') and entry.published_parsed:
                     published_dt_candidate = datetime(*entry.published_parsed[:6], tzinfo=UTC)
                 elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
                     published_dt_candidate = datetime(*entry.updated_parsed[:6], tzinfo=UTC)
                 
-                # If after checking, it's still None, assign current time as fallback
-                if published_dt_candidate is None: # Explicitly check for None
-                    published_dt_candidate = datetime.now(UTC) # Fallback to now if no publish date
+                if published_dt_candidate is None:
+                    published_dt_candidate = datetime.now(UTC)
 
                 if published_dt_candidate > time_threshold:
                     raw_description = entry.summary if hasattr(entry, 'summary') and entry.summary else (entry.title if hasattr(entry, 'title') else 'No Description')
@@ -181,7 +180,6 @@ class NewsFetcher:
                         'description': clean_description,
                         'url': entry.link if hasattr(entry, 'link') else rss_url,
                         'source': feed.feed.title if hasattr(feed.feed, 'title') and feed.feed.title else 'Unknown RSS',
-                        # FIX: Use published_dt_candidate here
                         'publishedAt': published_dt_candidate.isoformat()
                     })
                     if len(recent_articles) >= article_count:
@@ -199,9 +197,8 @@ class NewsFetcher:
         Fetches a single content item based on the specified type, using only RSS feeds.
         Returns None if no recent, relevant content can be found.
         """
-        # No news fetching for motivational_quote_post type
         if content_type == 'motivational_quote_post':
-            return None # Indicate no news item for this type
+            return None
 
         startup_news_sources = [
             {'type': 'rss', 'url': 'https://techcrunch.com/category/startups/feed/', 'name': 'TechCrunch Startups'},
@@ -280,7 +277,7 @@ class NewsFetcher:
                 'description': article.get('description', article.get('title', 'No Description')),
                 'url': article.get('url', ''),
                 'source': source_name,
-                'publishedAt': article.get('publishedAt', datetime.now(UTC).isoformat()) # This is correct now, as _fetch_from_rss sets 'publishedAt'
+                'publishedAt': article.get('publishedAt', datetime.now(UTC).isoformat())
             }
         else:
             print(f"No recent RSS articles found for {content_type.replace('_', ' ').title()}.")
@@ -316,8 +313,8 @@ class TextProcessor:
 
     def _call_ai_api(self, messages):
         """Helper to call the OpenRouter API using the OpenAI client. Returns (short_title, summary, chosen_method, success_flag)."""
-        if self.api_key == "sk-or-v1-YOUR_DEEPSEEK_CHAT_API_KEY_HERE":
-            print("OPENROUTER_API_KEY for Deepseek Chat is a placeholder. Skipping AI text processing.")
+        if not self.api_key or self.api_key == "sk-or-v1-YOUR_DEEPSEEK_CHAT_API_KEY_HERE":
+            print("OPENROUTER_API_KEY for Deepseek Chat is not set or is a placeholder. Skipping AI text processing.")
             return "AI Key Error", "Please set your OpenRouter API key in config.py.", "None", False
 
         try:
@@ -365,9 +362,8 @@ class TextProcessor:
         """Generates concise title and summary for a given post using OpenRouter AI (Deepseek),
         focusing on storytelling elements. Returns (short_title, summary, chosen_method, success_flag).
         """
-        # Text processing is only for news content
         if post_type == 'motivational_quote_post':
-            return None, None, "N/A", False # No text processing needed for quotes
+            return None, None, "N/A", False
 
         method_list_str = "\n".join([f"- {m}" for m in self.storytelling_methods])
 
@@ -449,11 +445,10 @@ class CaptionGenerator:
         Generates an Instagram-style caption and 10 relevant hashtags.
         Returns (caption, hashtags_list, success_flag).
         """
-        if self.api_key == "sk-or-v1-YOUR_MISTRAL_SMALL_API_KEY_HERE":
-            print("OPENROUTER_MISTRAL_API_KEY is a placeholder. Skipping caption/hashtag generation.")
+        if not self.api_key or self.api_key == "sk-or-v1-YOUR_MISTRAL_SMALL_API_KEY_HERE":
+            print("OPENROUTER_MISTRAL_API_KEY is not set or is a placeholder. Skipping caption/hashtag generation.")
             return "Generated caption fallback.", ["#news", "#update"], False
 
-        # Custom prompt for motivational quotes
         if post_type == 'motivational_quote_post':
             system_message_content = f"""
             You are a highly engaging social media manager specializing in inspirational content for entrepreneurs, business leaders, and innovators.
@@ -464,13 +459,13 @@ class CaptionGenerator:
             """
             user_message_content = f"""
             Generate an Instagram caption and 10 relevant hashtags.
-            Quote: "{short_title}" (Note: short_title is used to pass the quote text for quote posts)
-            Author: "{summary}" (Note: summary is used to pass the author for quote posts)
+            Quote: "{short_title}"
+            Author: "{summary}"
 
             Return ONLY the JSON object with two keys: "caption" and "hashtags".
             Example: {{"caption": "Example quote caption...", "hashtags": ["#motivation", "#dailyquote"]}}
             """
-        else: # Original prompt for news posts
+        else:
             system_message_content = f"""
             You are a creative social media manager specializing in Instagram posts for news, especially Startup, Business, Financial, and Entrepreneurial content.
             Your task is to generate a concise and engaging Instagram caption and exactly 10 trending, relevant hashtags based on a news title and summary, taking into account the specific storytelling method used.
@@ -525,7 +520,6 @@ class CaptionGenerator:
                                             "#innovation", "#businessinsights", "#financefacts", "#startupjourney",
                                             "#entrepreneurmindset", "#successstories", "#marketupdate", "#investing",
                                             "#businesstips", "#futureofwork"]
-                        # Filter to avoid duplicates and ensure a good mix
                         current_tags_lower = {h.lower() for h in hashtags}
                         for gen_tag in generic_hashtags:
                             if len(hashtags) >= 10:
@@ -549,6 +543,65 @@ class CaptionGenerator:
             return f"Caption generation failed: {e}", ["#api_error", "#news"], False
 
 
+# --- NEW: ImageGenerator Class ---
+class ImageGenerator:
+    """Generates an image using Hugging Face Inference APIs."""
+
+    def __init__(self, token, endpoints):
+        self.token = token
+        self.endpoints = endpoints
+        if self.token:
+            self.headers = {"Authorization": f"Bearer {self.token}"}
+        else:
+            self.headers = {}
+
+    def _query_hf_api(self, endpoint, payload):
+        """Helper to query a single Hugging Face model endpoint."""
+        print(f"Attempting to generate image with model: {endpoint.split('/')[-1]}...")
+        try:
+            response = requests.post(endpoint, headers=self.headers, json=payload, timeout=90)
+
+            if response.status_code == 503:
+                print(f"Model {endpoint.split('/')[-1]} is currently loading. Trying next model.")
+                return None
+
+            response.raise_for_status()
+
+            if 'image' in response.headers.get('Content-Type', ''):
+                print(f"Successfully generated image from {endpoint.split('/')[-1]}.")
+                return Image.open(io.BytesIO(response.content))
+            else:
+                print(f"Warning: Response from {endpoint.split('/')[-1]} was not an image. Content-Type: {response.headers.get('Content-Type')}. Response: {response.text[:150]}...")
+                return None
+
+        except requests.exceptions.Timeout:
+            print(f"Hugging Face API request timed out for model '{endpoint.split('/')[-1]}'.")
+            return None
+        except requests.exceptions.RequestException as e:
+            print(f"Error generating image from Hugging Face model {endpoint.split('/')[-1]}: {e}")
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred during Hugging Face image generation: {e}")
+            return None
+
+    def generate_image_from_hf(self, prompt: str):
+        """
+        Attempts to generate an image from a list of Hugging Face models.
+        Returns a PIL Image object on the first success, or None if all fail.
+        """
+        if not self.token or self.token == "YOUR_HUGGING_FACE_TOKEN":
+            print("HUGGING_FACE_TOKEN is not set or is a placeholder. Skipping image generation.")
+            return None
+
+        for endpoint in self.endpoints:
+            generated_image = self._query_hf_api(endpoint, {"inputs": prompt})
+            if generated_image:
+                return generated_image
+
+        print("All Hugging Face models failed to generate an image. This could be due to model loading, errors, or timeouts.")
+        return None
+
+
 class ImageFetcher:
     """Fetches images from Pexels, Unsplash, Openverse, and Pixabay based on text prompts."""
 
@@ -563,8 +616,8 @@ class ImageFetcher:
 
     def _fetch_from_pexels(self, prompt, width, height):
         try:
-            if self.pexels_api_key == "YOUR_PEXELS_API_KEY_HERE":
-                print("PEXELS_API_KEY is a placeholder. Skipping Pexels.")
+            if not self.pexels_api_key or self.pexels_api_key == "YOUR_PEXELS_API_KEY":
+                print("PEXELS_API_KEY is not set or is a placeholder. Skipping Pexels.")
                 return None
             headers = {"Authorization": self.pexels_api_key}
             params = {"query": prompt, "orientation": "portrait", "size": "large", "per_page": 1}
@@ -591,8 +644,8 @@ class ImageFetcher:
 
     def _fetch_from_unsplash(self, prompt, width, height):
         try:
-            if self.unsplash_access_key == "YOUR_UNSPLASH_ACCESS_KEY_HERE":
-                print("UNSPLASH_ACCESS_KEY is a placeholder. Skipping Unsplash.")
+            if not self.unsplash_access_key or self.unsplash_access_key == "YOUR_UNSPLASH_ACCESS_KEY":
+                print("UNSPLASH_ACCESS_KEY is not set or is a placeholder. Skipping Unsplash.")
                 return None
             params = {"query": prompt, "orientation": "portrait", "client_id": self.unsplash_access_key, "per_page": 1}
             print(f"Searching Unsplash for image with prompt: {prompt[:50]}...")
@@ -642,8 +695,8 @@ class ImageFetcher:
 
     def _fetch_from_pixabay(self, prompt, width, height):
         try:
-            if self.pixabay_api_key == "YOUR_PIXABAY_API_KEY_HERE":
-                print("PIXABAY_API_KEY is a placeholder. Skipping Pixabay.")
+            if not self.pixabay_api_key or self.pixabay_api_key == "YOUR_PIXABAY_API_KEY":
+                print("PIXABAY_API_KEY is not set or is a placeholder. Skipping Pixabay.")
                 return None
             params = {"key": self.pixabay_api_key, "q": prompt, "image_type": "photo", "orientation": "vertical", "safesearch": "true", "per_page": 1, "editors_choice": "true", "min_width": width, "min_height": height}
             print(f"Searching Pixabay for image with prompt: {prompt[:50]}...")
@@ -669,9 +722,8 @@ class ImageFetcher:
             return None
 
     def fetch_image(self, prompt, width=IMAGE_DISPLAY_WIDTH, height=IMAGE_DISPLAY_HEIGHT):
-        # Image fetching is only for news content. Motivational quote posts use a generated background.
         if "motivational quote" in prompt.lower() or "inspirational quote" in prompt.lower():
-            return None # Indicate no image is needed to be fetched for quotes
+            return None
 
         fetched_image = None
         fetched_image = self._fetch_from_pexels(prompt, width, height)
@@ -687,13 +739,7 @@ class ImageFetcher:
 class ImageLocalProcessor:
     """Handles local image processing and text overlays with new design aesthetics."""
 
-    # REMOVED: MOTIVATIONAL_QUOTES static list, as it will be AI-generated
-
     def _get_filtered_source_display(self, original_source_text: str) -> str:
-        """
-        Filters and shortens the source text for internal logging/metadata.
-        This function is no longer used for display on the post itself.
-        """
         if not original_source_text:
             return "UNKNOWN"
 
@@ -769,81 +815,62 @@ class ImageLocalProcessor:
         draw = None
         dummy_draw_for_text_bbox = ImageDraw.Draw(Image.new('RGB', (1,1)))
 
-        try: # Outer try-except for the entire overlay_text function
+        try:
             if content_type == 'motivational_quote_post':
-                # --- Layout for Motivational Quote Post ---
-                quote_text = post_data.get('title', 'No Quote') # Title field holds the quote for quote posts
-                quote_author = post_data.get('summary', 'Unknown') # Summary field holds the author for quote posts
+                quote_text = post_data.get('title', 'No Quote')
+                quote_author = post_data.get('summary', 'Unknown')
 
-                # Use quote-specific colors for background
                 background_gen = BackgroundGenerator()
-                # Creating a subtle gradient for quotes too, using the new colors
                 final_canvas = background_gen.generate_gradient_background(CANVAS_WIDTH, CANVAS_HEIGHT,
                                                                             QUOTE_COLOR_BACKGROUND_LIGHT,
-                                                                            tuple(int(c * 0.9) for c in QUOTE_COLOR_BACKGROUND_LIGHT[:3]) + (255,)) # Slightly darker variant for gradient
+                                                                            tuple(int(c * 0.9) for c in QUOTE_COLOR_BACKGROUND_LIGHT[:3]) + (255,))
                 draw = ImageDraw.Draw(final_canvas)
 
-                # Draw the main quote text
-                font_quote = load_font(FONT_PATH_ALFA_SLAB_ONE, FONT_SIZE_QUOTE) # Alfa Slab One for prominent quote
+                font_quote = load_font(FONT_PATH_ALFA_SLAB_ONE, FONT_SIZE_QUOTE)
                 text_area_width = CANVAS_WIDTH - (2 * LEFT_PADDING)
                 wrapped_quote_lines = textwrap.wrap(quote_text, width=int(text_area_width / (FONT_SIZE_QUOTE * 0.5)), break_long_words=False)
 
                 total_quote_height = 0
                 for line in wrapped_quote_lines:
                     line_bbox = dummy_draw_for_text_bbox.textbbox((0,0), line, font=font_quote)
-                    total_quote_height += (line_bbox[3] - line_bbox[1]) + 15 # Increased line spacing for quote
+                    total_quote_height += (line_bbox[3] - line_bbox[1]) + 15
 
-
-                # Center the quote vertically and horizontally
                 current_y = (CANVAS_HEIGHT - total_quote_height) // 2
                 
-                # Adjust to ensure it's not too high for very short quotes
                 if current_y < TOP_PADDING + 50:
                     current_y = TOP_PADDING + 50
-
 
                 for line in wrapped_quote_lines:
                     line_bbox = dummy_draw_for_text_bbox.textbbox((0,0), line, font=font_quote)
                     line_width = line_bbox[2] - line_bbox[0]
                     text_x_centered = (CANVAS_WIDTH - line_width) // 2
                     draw.text((text_x_centered, current_y), line, font=font_quote, fill=QUOTE_COLOR_TEXT_DARK)
-                    current_y += (line_bbox[3] - line_bbox[1]) + 15 # Consistent line spacing
+                    current_y += (line_bbox[3] - line_bbox[1]) + 15
 
-
-                # Draw author below quote
                 if quote_author and quote_author != "Unknown":
-                    font_author = load_font(FONT_PATH_REGULAR, FONT_SIZE_QUOTE_AUTHOR) # Montserrat Regular for author
+                    font_author = load_font(FONT_PATH_REGULAR, FONT_SIZE_QUOTE_AUTHOR)
                     author_bbox = dummy_draw_for_text_bbox.textbbox((0,0), quote_author, font=font_author)
                     author_width = author_bbox[2] - author_bbox[0]
-                    draw.text(((CANVAS_WIDTH - author_width) // 2, current_y + 40), # More margin below quote
+                    draw.text(((CANVAS_WIDTH - author_width) // 2, current_y + 40),
                               quote_author, font=font_author, fill=QUOTE_COLOR_ACCENT)
 
-
-                # Logo for Quote Post (bottom center)
                 try:
                     logo_image = Image.open(LOGO_PATH).convert("RGBA")
                     logo_image.thumbnail((QUOTE_LOGO_WIDTH, QUOTE_LOGO_HEIGHT), Image.Resampling.LANCZOS)
                     logo_x = (CANVAS_WIDTH - QUOTE_LOGO_WIDTH) // 2
                     logo_y = CANVAS_HEIGHT - QUOTE_LOGO_BOTTOM_MARGIN - QUOTE_LOGO_HEIGHT
-                    # FIX: Use final_canvas.paste, not draw.paste
                     final_canvas.paste(logo_image, (logo_x, logo_y), logo_image)
                 except FileNotFoundError:
                     print(f"Warning: Logo file not found at {LOGO_PATH}. Skipping logo for quote post.")
-                    # FIX: Removed the "Insight Pulse" text fallback here as requested
                 except Exception as e:
                     print(f"Error embedding logo for quote post: {e}. Skipping logo for quote post.")
-                    # FIX: Removed the "Insight Pulse" text fallback here as requested
-
 
             else:
-                # --- Original Layout for News Posts ---
-                # 1. Create Gradient Background
                 background_gen = BackgroundGenerator()
                 final_canvas = background_gen.generate_gradient_background(CANVAS_WIDTH, CANVAS_HEIGHT,
                                                                             COLOR_GRADIENT_TOP_LEFT, COLOR_GRADIENT_BOTTOM_RIGHT)
                 draw = ImageDraw.Draw(final_canvas)
 
-                # --- TOP LEFT CATEGORY TEXT ---
                 content_type_map = {
                     'startup_news': "STARTUP INSIGHTS",
                     'business_news': "BUSINESS PULSE",
@@ -855,8 +882,6 @@ class ImageLocalProcessor:
                 font_top_left_text = load_font(FONT_PATH_ALFA_SLAB_ONE, FONT_SIZE_TOP_LEFT_TEXT)
                 draw.text((TOP_LEFT_TEXT_POS_X, TOP_LEFT_TEXT_POS_Y), content_type_display, font=font_top_left_text, fill=COLOR_TOP_LEFT_TEXT)
 
-
-                # --- TIMESTAMP (TOP RIGHT) ---
                 timestamp_text = datetime.now().strftime("%d %b %Y | %H:%M")
                 font_timestamp = load_font(FONT_PATH_REGULAR, FONT_SIZE_TIMESTAMP)
                 timestamp_bbox = dummy_draw_for_text_bbox.textbbox((0,0), timestamp_text, font=font_timestamp)
@@ -865,7 +890,6 @@ class ImageLocalProcessor:
                 draw.text((TIMESTAMP_POS_X_RIGHT_ALIGN - timestamp_width, TIMESTAMP_POS_Y),
                           timestamp_text, font=font_timestamp, fill=COLOR_TIMESTAMP_TEXT)
 
-                # --- NEWS IMAGE (CENTERED, ROUNDED CORNERS) ---
                 image_start_y = max(
                     TOP_LEFT_TEXT_POS_Y + (dummy_draw_for_text_bbox.textbbox((0,0), content_type_display, font=font_top_left_text)[3] - dummy_draw_for_text_bbox.textbbox((0,0), content_type_display, font=font_top_left_text)[1]),
                     TIMESTAMP_POS_Y + (timestamp_bbox[3] - timestamp_bbox[1])
@@ -910,8 +934,6 @@ class ImageLocalProcessor:
                 final_canvas.paste(shadow_img, (news_image_x, int(image_start_y)), shadow_img)
                 final_canvas.paste(news_image_for_display, (news_image_x, int(image_start_y)), mask)
 
-
-                # --- TITLE (BELOW IMAGE) ---
                 title_text_raw = str(post_data.get('title', 'NO TITLE')).upper()
                 font_headline = load_font(FONT_PATH_ALFA_SLAB_ONE, FONT_SIZE_HEADLINE)
 
@@ -928,7 +950,6 @@ class ImageLocalProcessor:
                     draw.text((text_x_centered, current_y_title), line, font=font_headline, fill=COLOR_HEADLINE_TEXT)
                     current_y_title += (line_bbox[3] - line_bbox[1]) + TITLE_LINE_SPACING
 
-                # --- SUMMARY TEXT (BELOW TITLE) - Dynamically positioned ---
                 summary_text_raw = str(post_data.get('summary', 'No summary provided.')).replace("&#x27;", "'").replace("&quot;", "\"")
                 font_summary = load_font(FONT_PATH_TAPESTRY, FONT_SIZE_SUMMARY)
 
@@ -946,17 +967,13 @@ class ImageLocalProcessor:
                     line_height = (dummy_draw_for_text_bbox.textbbox((0,0), line, font=font_summary)[3] - dummy_draw_for_text_bbox.textbbox((0,0), line, font=font_summary)[1])
                     current_y_summary += line_height + SUMMARY_LINE_SPACING
 
-                current_y_summary -= SUMMARY_LINE_SPACING # Remove last line spacing
+                current_y_summary -= SUMMARY_LINE_SPACING
 
-                # --- DIVIDER LINE ---
                 divider_y = current_y_summary + DIVIDER_Y_OFFSET_FROM_SUMMARY
                 draw.line([(LEFT_PADDING, divider_y), (CANVAS_WIDTH - RIGHT_PADDING, divider_y)], fill=COLOR_DIVIDER_LINE, width=DIVIDER_LINE_THICKNESS)
 
-
-                # --- LOGO (BOTTOM LEFT) - Adjusted positioning for news posts ---
                 logo_final_y = CANVAS_HEIGHT - BOTTOM_PADDING - LOGO_HEIGHT - LOGO_BOTTOM_MARGIN
-                # Ensure logo is below divider with some padding, if space allows.
-                logo_final_y = max(logo_final_y, divider_y + 20) # 20px buffer below divider
+                logo_final_y = max(logo_final_y, divider_y + 20)
 
                 try:
                     logo_image = Image.open(LOGO_PATH).convert("RGBA")
@@ -971,8 +988,7 @@ class ImageLocalProcessor:
                     draw.text((LEFT_PADDING, int(logo_final_y) + (LOGO_HEIGHT - 30) // 2), "Insight Pulse (Error)", font=load_font(FONT_PATH_BOLD, 30), fill=COLOR_SOURCE_TEXT)
 
 
-            # --- Add Thin Border Line at edges of the post (for both types) ---
-            if final_canvas: # Ensure canvas was created
+            if final_canvas:
                 border_rect = [(BORDER_THICKNESS // 2, BORDER_THICKNESS // 2),
                                (CANVAS_WIDTH - BORDER_THICKNESS // 2, CANVAS_HEIGHT - BORDER_THICKNESS // 2)]
                 draw.rectangle(border_rect, outline=BORDER_COLOR, width=BORDER_THICKNESS)
@@ -1003,16 +1019,9 @@ class CloudinaryUploader:
         )
 
     def upload_image(self, image_path, public_id, folder="news_posts"):
-        """
-        Uploads an image to Cloudinary.
-        image_path: local path to the image file.
-        public_id: A unique identifier for the image in Cloudinary.
-        folder: The folder in Cloudinary to upload to.
-        Returns the secure URL of the uploaded image or None on failure.
-        """
         try:
-            if CLOUDINARY_CLOUD_NAME == "YOUR_CLOUDINARY_CLOUD_NAME_HERE":
-                print("Cloudinary credentials are placeholders. Skipping upload.")
+            if not CLOUDINARY_CLOUD_NAME or CLOUDINARY_CLOUD_NAME == "YOUR_CLOUDINARY_CLOUD_NAME":
+                print("Cloudinary credentials are not set or are placeholders. Skipping upload.")
                 return None
 
             print(f"Uploading {image_path} to Cloudinary folder '{folder}' with public_id '{public_id}'...")
@@ -1042,15 +1051,9 @@ class InstagramPoster:
         self.graph_api_base_url = "https://graph.facebook.com/v19.0/"
 
     def post_image(self, image_url, caption):
-        """
-        Posts an image to Instagram.
-        image_url: The secure URL of the image from Cloudinary.
-        caption: The combined caption and hashtags.
-        Returns True on success, False on failure.
-        """
-        if self.instagram_business_account_id == "YOUR_INSTAGRAM_BUSINESS_ACCOUNT_ID_HERE" or \
-           self.access_token == "YOUR_FB_PAGE_ACCESS_TOKEN_HERE":
-            print("Instagram Graph API credentials are placeholders. Skipping Instagram post.")
+        if not self.instagram_business_account_id or self.instagram_business_account_id == "YOUR_INSTAGRAM_BUSINESS_ACCOUNT_ID" or \
+           not self.access_token or self.access_token == "YOUR_FB_PAGE_ACCESS_TOKEN":
+            print("Instagram Graph API credentials are not set or are placeholders. Skipping Instagram post.")
             return False
 
         if not image_url:
@@ -1059,7 +1062,6 @@ class InstagramPoster:
 
         print(f"Attempting to post to Instagram (Account ID: {self.instagram_business_account_id})...")
 
-        # Step 1: Create media container
         media_container_url = f"{self.graph_api_base_url}{self.instagram_business_account_id}/media"
         media_params = {
             'image_url': image_url,
@@ -1085,7 +1087,6 @@ class InstagramPoster:
             print("Failed to get media container ID.")
             return False
 
-        # Step 2: Publish media container
         publish_url = f"{self.graph_api_base_url}{self.instagram_business_account_id}/media_publish"
         publish_params = {
             'creation_id': media_container_id,
@@ -1125,11 +1126,10 @@ class LocalSaver:
         os.makedirs(self.JSON_OUTPUT_DIR, exist_ok=True)
         os.makedirs(self.EXCEL_OUTPUT_DIR, exist_ok=True)
 
-    def save_post(self, post_data, workflow_manager_instance): # Modified to accept workflow_manager_instance
+    def save_post(self, post_data, workflow_manager_instance):
         """Saves a single post's data and image."""
         post_type_label = post_data.get('type', 'post').replace('_', '-')
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # Use the passed workflow_manager_instance to get the post number
         post_id = f"{post_type_label}_{timestamp_str}_post-{workflow_manager_instance.get_current_post_number()}"
 
         post_data['Post_ID'] = post_id
@@ -1148,7 +1148,6 @@ class LocalSaver:
             print(f"Warning: No valid 'final_image' found in post_data for post ID {post_id}. Image not saved.")
             image_path = "No image generated/saved"
 
-        # Dynamically add metadata based on post type
         metadata = {
             "Post_ID": post_data['Post_ID'],
             "SEO_Caption": post_data.get('seo_caption'),
@@ -1158,6 +1157,7 @@ class LocalSaver:
             "Instagram_Posted": post_data.get('instagram_posted', False),
             "Timestamp": datetime.now(UTC).isoformat(),
             "Source_Type": post_data.get('type'),
+            "Image_Source": post_data.get('image_source', 'N/A') # NEW: Track where the image came from
         }
 
         if post_data.get('type') == 'motivational_quote_post':
@@ -1215,7 +1215,6 @@ class LocalSaver:
             print(f"Error saving to Excel file {self.ALL_POSTS_EXCEL_FILE}: {e}")
 
     def load_all_posts_data(self):
-        """Loads all historical post data from the JSON file."""
         if os.path.exists(self.ALL_POSTS_JSON_FILE):
             try:
                 with open(self.ALL_POSTS_JSON_FILE, 'r', encoding='utf-8') as f:
@@ -1237,7 +1236,6 @@ class LocalSaver:
 # --- Analysis Functions ---
 
 def _load_analysis_results(file_path):
-    """Loads previous analysis results from a given file path."""
     if os.path.exists(file_path):
         try:
             with open(file_path, 'r') as f:
@@ -1254,7 +1252,6 @@ def _load_analysis_results(file_path):
     return {}
 
 def _save_analysis_results(analysis_data, file_path):
-    """Saves the current analysis results to a given file path."""
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
     try:
         with open(file_path, 'w', encoding='utf-8') as f:
@@ -1264,9 +1261,6 @@ def _save_analysis_results(analysis_data, file_path):
         print(f"Error saving analysis to {file_path}: {e}")
 
 def perform_weekly_analysis(ai_client_for_analysis, local_saver_instance):
-    """
-    Analyzes past week's content using Deepseek R1 model and generates style recommendations for OWN content.
-    """
     print("\n--- Performing Weekly Internal Content Style Analysis ---")
 
     all_posts_data = local_saver_instance.load_all_posts_data()
@@ -1276,7 +1270,6 @@ def perform_weekly_analysis(ai_client_for_analysis, local_saver_instance):
     past_week_posts = []
     for post in all_posts_data:
         try:
-            # Filter out motivational quote posts from news analysis
             if post.get('Source_Type') == 'motivational_quote_post':
                 continue
 
@@ -1326,7 +1319,7 @@ def perform_weekly_analysis(ai_client_for_analysis, local_saver_instance):
     prompt = f"""Analyze the following past week's generated Instagram content data from our system. For each post, the 'Storytelling Method' used is provided.
     Based on this data, provide specific and actionable recommendations to improve:
     1.  **Overall Content Style and Themes:** What news topics or angles seem most engaging for our target audience (Startup, Business, Financial, Entrepreneurial)? How can the overall aesthetic (colors, fonts, image placement) be refined for a more professional and engaging look?
-    2.  **Storytelling Methods:** Which of the used storytelling methods (The Burning Question, The Unexpected Twist, The Ripple Effect, The Human Element, The Hypothetical Future, The Myth Buster, The Origin Story, The Unveiling Mystery) seem to resonate most effectively, or how can they be improved? Provide guidance on when to use each method to achieve desired engagement (e.g., curiosity, discussion, sharing).
+    2.  **Storytelling Methods:** Which of the used storytelling methods seem to resonate most effectively, or how can they be improved? Provide guidance on when to use each method to achieve desired engagement.
     3.  **Caption Style:** How can captions be more impactful, more aligned with the storytelling method, and encourage comments or shares?
     4.  **Hashtag Strategy:** How can hashtag usage be optimized for better discoverability within Startup, Business, Financial, and Entrepreneurial niches?
     5.  **Content Completeness:** For content that is not explicitly open-ended, how can we ensure the summary and caption provide maximum value and completeness to the reader?
@@ -1366,22 +1359,15 @@ def perform_weekly_analysis(ai_client_for_analysis, local_saver_instance):
 
 
 def perform_internal_instagram_performance_analysis(ai_client_for_analysis, instagram_poster_instance):
-    """
-    Fetches recent Instagram post insights for *your own* business account via Graph API
-    and uses Deepseek R1 to analyze performance based on captions and storytelling methods.
-    """
     print("\n--- Performing Internal Instagram Post Performance Analysis ---")
 
-    # DUMMY DATA for demonstration purposes if live API fetching is not set up
     live_insta_posts_data = [
         {"id": "INSTAPOST123", "caption": "The Burning Question: Can this new AI tool really predict market shifts? Insights inside! #AIinFinance #MarketPredictions", "media_type": "IMAGE", "likes": 500, "comments": 80, "shares": 20, "saves": 30, "storytelling_method": "The Burning Question", "source_type": "startup_news", "timestamp": (datetime.now(UTC) - timedelta(days=1)).isoformat()},
         {"id": "INSTAPOST124", "caption": "The Unexpected Twist: This business model was doomed... until it wasn't. Learn their secret! #BusinessSuccess #Innovation", "media_type": "IMAGE", "likes": 300, "comments": 40, "shares": 10, "saves": 15, "storytelling_method": "The Unexpected Twist", "source_type": "business_news", "timestamp": (datetime.now(UTC) - timedelta(hours=30)).isoformat()},
         {"id": "INSTAPOST125", "caption": "The Ripple Effect: How one small startup's funding round is changing the entire investment landscape. #StartupFunding #Fintech", "media_type": "IMAGE", "likes": 600, "comments": 100, "shares": 25, "saves": 40, "storytelling_method": "The Ripple Effect", "source_type": "financial_news", "timestamp": (datetime.now(UTC) - timedelta(days=2)).isoformat()},
         {"id": "INSTAPOST126", "caption": "The Human Element: Meet the founder who built an empire from a single idea and a shoestring budget. #EntrepreneurLife #Inspiration", "media_type": "IMAGE", "likes": 450, "comments": 60, "shares": 15, "saves": 25, "storytelling_method": "The Human Element", "source_type": "entrepreneurial_news", "timestamp": (datetime.now(UTC) - timedelta(hours=50)).isoformat()},
-        # Dummy data for motivational quote post
         {"id": "INSTAPOST127", "caption": "Believe you can and you're halfway there. ✨ What's stopping you from starting today? #Motivation #DailyQuote #EntrepreneurMindset", "media_type": "IMAGE", "likes": 700, "comments": 120, "shares": 50, "saves": 80, "storytelling_method": "N/A", "source_type": "motivational_quote_post", "timestamp": (datetime.now(UTC) - timedelta(days=1)).isoformat()},
     ]
-    # Filter for posts within the analysis interval
     filtered_insta_posts = []
     time_threshold = datetime.now(UTC) - timedelta(days=INSTAGRAM_ANALYSIS_INTERVAL_DAYS)
     for post in live_insta_posts_data:
@@ -1398,7 +1384,7 @@ def perform_internal_instagram_performance_analysis(ai_client_for_analysis, inst
         engagement_score = post.get('likes', 0) + post.get('comments', 0) + post.get('shares', 0) + post.get('saves', 0)
         analysis_data_for_ai.append(
             f"Post ID: {post['id']}\n"
-            f"  Content Type: {post['source_type']}\n" # Added content type
+            f"  Content Type: {post['source_type']}\n"
             f"  Storytelling Method: {post['storytelling_method']}\n"
             f"  Caption: {post['caption']}\n"
             f"  Engagement Score (Likes+Comments+Shares+Saves): {engagement_score}\n"
@@ -1409,20 +1395,20 @@ def perform_internal_instagram_performance_analysis(ai_client_for_analysis, inst
     system_message = f"""
     You are an expert social media performance analyst. Your task is to analyze the provided data from OUR OWN Instagram Business Account's recent posts.
     Identify patterns of high and low performance related to:
-    1.  **Storytelling Method Effectiveness:** Which specific storytelling methods (e.g., 'The Burning Question', 'The Ripple Effect') seem to lead to higher engagement metrics (likes, comments, shares, saves)? Provide insights into *why* they might be working.
-    2.  **Caption Effectiveness:** What elements in captions (e.g., call-to-actions, tone, length, clarity, use of emojis/questions) correlate with better performance?
+    1.  **Storytelling Method Effectiveness:** Which specific storytelling methods seem to lead to higher engagement metrics (likes, comments, shares, saves)? Provide insights into *why* they might be working.
+    2.  **Caption Effectiveness:** What elements in captions correlate with better performance?
     3.  **Overall Post Strategy:** Suggest concrete, actionable improvements for our future Instagram posts to maximize engagement based on actual past performance.
     4.  **Content Completeness vs. Open-Ended:** Analyze if posts intended to be 'complete' achieved that, and if 'open-ended' ones successfully drove discussion.
-    5.  **Motivational Quote Post Performance:** Specifically analyze how the dedicated motivational quote posts perform compared to news posts. What makes them effective or what can be improved in their captioning and hashtag strategy?
+    5.  **Motivational Quote Post Performance:** Specifically analyze how the dedicated motivational quote posts perform compared to news posts.
     """
 
-    prompt = f"""Analyze the following performance data from our Instagram posts. Each entry includes the Post ID, the Content Type (news vs. motivational_quote_post), the Storytelling Method used (if applicable), the Caption, and various engagement metrics (Likes, Comments, Shares, Saves).
+    prompt = f"""Analyze the following performance data from our Instagram posts. Each entry includes the Post ID, the Content Type, the Storytelling Method, the Caption, and engagement metrics.
     Based on this analysis:
     -   **Performance by Content Type:** How do motivational quote posts perform compared to news posts in terms of overall engagement?
-    -   **Storytelling Method Performance (for News Posts):** Which news storytelling methods appear to be the most effective for *our* audience (Startup, Business, Financial, Entrepreneurial niches), and why? Discuss how different methods encourage different types of engagement.
-    -   **Caption Characteristics for Success:** Detail the common characteristics of captions from high-performing posts across *all* content types. What makes them engaging for our target audience?
-    -   **User Interaction Insights (Comments & Shares):** What kind of comments and shares (if data available) do high-performing posts tend to attract? What does this tell us about what truly resonates?
-    -   **Actionable Recommendations:** Provide 3-5 specific, actionable recommendations for improving our next batch of Instagram posts to boost overall engagement (likes, comments, shares, saves), considering the effectiveness of storytelling, captioning, and content completeness for both news and motivational quote formats.
+    -   **Storytelling Method Performance (for News Posts):** Which news storytelling methods appear to be the most effective for *our* audience, and why?
+    -   **Caption Characteristics for Success:** Detail the common characteristics of captions from high-performing posts across *all* content types.
+    -   **User Interaction Insights (Comments & Shares):** What kind of comments and shares do high-performing posts tend to attract?
+    -   **Actionable Recommendations:** Provide 3-5 specific, actionable recommendations for improving our next batch of Instagram posts to boost overall engagement.
 
     Here is the data:
     ---
@@ -1458,15 +1444,8 @@ def perform_internal_instagram_performance_analysis(ai_client_for_analysis, inst
 
 
 def perform_external_instagram_analysis(ai_client_for_analysis):
-    """
-    (CONCEPTUAL ONLY - HIGHLY LIMITED / NOT LIVE)
-    This function simulates analyzing other Instagram content.
-    Actual implementation for this is NOT possible via public Instagram Graph API for general search.
-    This function will use DUMMY/SIMULATED data to demonstrate the analytical *logic*.
-    """
     print("\n--- Performing Conceptual External Instagram Content Analysis ---")
 
-    # SIMULATED EXTERNAL DATA: Represents data *you would hypothetically gather* from other successful posts/accounts.
     simulated_external_posts = [
         {"caption": "The future of AI in finance is here, but are you ready for the disruption? 🔥 #Fintech #AI #Disruptor", "comments_count": 250, "likes_count": 5000, "content_theme": "AI in Finance News", "account_handle": "@FintechFuture"},
         {"caption": "Unlocking the secrets of venture capital: What VCs *really* look for in a startup pitch. 👀 #VCRules #StartupFunding", "comments_count": 180, "likes_count": 3500, "content_theme": "Venture Capital News", "account_handle": "@StartupInsights"},
@@ -1474,7 +1453,6 @@ def perform_external_instagram_analysis(ai_client_for_analysis):
         {"caption": "Don't fall for these common investment myths! A deep dive into what truly builds wealth. 💰 #InvestingTips #WealthBuilding", "comments_count": 120, "likes_count": 2800, "content_theme": "Investment Myths News", "account_handle": "@SmartInvestor"},
         {"caption": "The one mindset shift every aspiring entrepreneur needs to make TODAY. This will change everything. ✨ #EntrepreneurMindset #Success", "comments_count": 400, "likes_count": 7500, "content_theme": "Entrepreneurial Mindset Quote", "account_handle": "@InspireEntrepreneurs"},
         {"caption": "Is the tech bubble about to burst, or is this just the calm before the storm? Experts weigh in. 📉📈 #TechBubble #MarketAnalysis", "comments_count": 150, "likes_count": 3000, "content_theme": "Market Trends News", "account_handle": "@MarketWatchers"},
-        # Added a simulated external quote post
         {"caption": "Your potential is endless. Go do what you were created to do! #Motivation #UnleashYourPotential #SuccessMindset", "comments_count": 500, "likes_count": 8000, "content_theme": "Inspirational Quote", "account_handle": "@DailyMotivator"},
     ]
 
@@ -1494,23 +1472,23 @@ def perform_external_instagram_analysis(ai_client_for_analysis):
         )
 
     system_message = f"""
-    You are a highly analytical social media expert. Your task is to analyze provided sample data from *other* successful Instagram posts (captions, likes, comments, themes).
-    Your goal is to identify patterns and best practices that contribute to high engagement and effective content strategies for Startup, Business, Financial, and Entrepreneurial niches.
+    You are a highly analytical social media expert. Your task is to analyze provided sample data from *other* successful Instagram posts.
+    Your goal is to identify patterns and best practices that contribute to high engagement for Startup, Business, Financial, and Entrepreneurial niches.
     Focus on understanding:
-    1.  **What kind of post is performing better?** (e.g., content themes, topics, types of news, visual style inferred from description, motivational vs news)
-    2.  **Why is it performing better?** (e.g., specific caption elements, call-to-actions, tone, emotional appeal, storytelling style implicitly used, relevance)
-    3.  **Analyze with captions:** How are captions structured? What kind of language is used? How do they encourage interaction?
-    4.  **Comment Analysis:** What kind of comments do these posts attract? (e.g., questions, debates, personal stories, requests for more info, positive feedback)
+    1.  **What kind of post is performing better?**
+    2.  **Why is it performing better?**
+    3.  **Analyze captions:** How are they structured? What language is used?
+    4.  **Comment Analysis:** What kind of comments do these posts attract?
     Provide actionable insights for *our* content creation.
     """
 
-    prompt = f"""Analyze the following simulated data from other Instagram posts. Each entry includes a caption, likes, comments, and a content theme (e.g., "AI in Finance News", "Inspirational Quote").
+    prompt = f"""Analyze the following simulated data from other Instagram posts. Each entry includes a caption, likes, comments, and a content theme.
     Based on this data, provide a comprehensive analysis:
-    -   **Performance by Content Type:** How do dedicated inspirational/motivational quote posts perform compared to news-focused posts on other successful accounts?
-    -   **High-Performing Content Themes/Types:** Which specific themes or types of posts (e.g., "AI in Finance News", "Small Business Growth News", "Inspirational Quote") seem to get the most engagement, and why?
-    -   **Caption Effectiveness:** Break down the characteristics of captions from high-performing posts, differentiating between news and quote posts if applicable. What makes them engaging? (e.g., use of strong hooks, questions, emojis, calls to action, emotional connection, concise messaging)
-    -   **Audience Interaction (Comments):** Describe the nature and sentiment of comments on the top-performing posts. What are users saying, and what does this tell us about what truly resonates?
-    -   **General Strategic Takeaways:** What overarching lessons can we learn from these examples to apply to our own Startup, Business, Financial, and Entrepreneurial content on Instagram? Suggest ways to integrate their successful strategies with our unique storytelling methods and distinct motivational quote format.
+    -   **Performance by Content Type:** How do inspirational/motivational quote posts perform compared to news-focused posts on other successful accounts?
+    -   **High-Performing Content Themes/Types:** Which specific themes or types of posts seem to get the most engagement, and why?
+    -   **Caption Effectiveness:** Break down the characteristics of captions from high-performing posts, differentiating between news and quote posts.
+    -   **Audience Interaction (Comments):** Describe the nature and sentiment of comments on the top-performing posts.
+    -   **General Strategic Takeaways:** What overarching lessons can we learn from these examples to apply to our own content?
 
     Here is the simulated data:
     ---
@@ -1545,27 +1523,28 @@ def perform_external_instagram_analysis(ai_client_for_analysis):
 
 
 def check_api_keys():
-    """Checks if essential API keys are placeholder strings. Provides warnings."""
     warnings = []
-    if OPENROUTER_API_KEY == "sk-or-v1-YOUR_DEEPSEEK_CHAT_API_KEY_HERE":
-        warnings.append("OPENROUTER_API_KEY (for Deepseek Chat) is still a placeholder. AI text processing might be limited or fail.")
-    if OPENROUTER_DEEPSEEK_R1_API_KEY == "sk-or-v1-YOUR_DEEPSEEK_R1_API_KEY_HERE":
-        warnings.append("OPENROUTER_DEEPSEEK_R1_API_KEY (for Deepseek R1 analysis) is still a placeholder. Analysis tasks might fail.")
-    if OPENROUTER_MISTRAL_API_KEY == "sk-or-v1-YOUR_MISTRAL_SMALL_API_KEY_HERE":
-        warnings.append("OPENROUTER_MISTRAL_API_KEY (for Mistral) is still a placeholder. Caption/hashtag generation might fail.")
-    if PEXELS_API_KEY == "YOUR_PEXELS_API_KEY_HERE":
-        warnings.append("PEXELS_API_KEY is still a placeholder. Pexels image fetches might be limited or fail.")
-    if UNSPLASH_ACCESS_KEY == "YOUR_UNSPLASH_ACCESS_KEY_HERE":
-        warnings.append("UNSPLASH_ACCESS_KEY is still a placeholder. Unsplash image fetches might be limited or fail.")
-    if PIXABAY_API_KEY == "YOUR_PIXABAY_API_KEY_HERE":
-        warnings.append("PIXABAY_API_KEY is still a placeholder. Pixabay image fetches might be limited or fail.")
-    if CLOUDINARY_CLOUD_NAME == "YOUR_CLOUDINARY_CLOUD_NAME_HERE" or \
-       CLOUDINARY_API_KEY == "YOUR_CLOUDINARY_API_KEY_HERE" or \
-       CLOUDINARY_API_SECRET == "YOUR_CLOUDINARY_API_SECRET_HERE":
-        warnings.append("Cloudinary API credentials are still placeholders. Image upload will fail.")
-    if FB_PAGE_ACCESS_TOKEN == "YOUR_FB_PAGE_ACCESS_TOKEN_HERE" or \
-       INSTAGRAM_BUSINESS_ACCOUNT_ID == "YOUR_INSTAGRAM_BUSINESS_ACCOUNT_ID_HERE":
-        warnings.append("Instagram Graph API credentials are still placeholders. Instagram posting will fail.")
+    if not OPENROUTER_API_KEY or OPENROUTER_API_KEY == "sk-or-v1-YOUR_DEEPSEEK_CHAT_API_KEY_HERE":
+        warnings.append("OPENROUTER_API_KEY (for Deepseek Chat) is not set or is a placeholder. AI text processing might fail.")
+    if not OPENROUTER_DEEPSEEK_R1_API_KEY or OPENROUTER_DEEPSEEK_R1_API_KEY == "sk-or-v1-YOUR_DEEPSEEK_R1_API_KEY_HERE":
+        warnings.append("OPENROUTER_DEEPSEEK_R1_API_KEY (for Deepseek R1 analysis) is not set or is a placeholder. Analysis tasks will fail.")
+    if not OPENROUTER_MISTRAL_API_KEY or OPENROUTER_MISTRAL_API_KEY == "sk-or-v1-YOUR_MISTRAL_SMALL_API_KEY_HERE":
+        warnings.append("OPENROUTER_MISTRAL_API_KEY (for Mistral) is not set or is a placeholder. Caption/hashtag generation will fail.")
+    if not HUGGING_FACE_TOKEN or HUGGING_FACE_TOKEN == "YOUR_HUGGING_FACE_TOKEN":
+        warnings.append("HUGGING_FACE_TOKEN is not set or is a placeholder. Image generation will be skipped.")
+    if not PEXELS_API_KEY or PEXELS_API_KEY == "YOUR_PEXELS_API_KEY":
+        warnings.append("PEXELS_API_KEY is not set or is a placeholder. Pexels image fetches will fail.")
+    if not UNSPLASH_ACCESS_KEY or UNSPLASH_ACCESS_KEY == "YOUR_UNSPLASH_ACCESS_KEY":
+        warnings.append("UNSPLASH_ACCESS_KEY is not set or is a placeholder. Unsplash image fetches will fail.")
+    if not PIXABAY_API_KEY or PIXABAY_API_KEY == "YOUR_PIXABAY_API_KEY":
+        warnings.append("PIXABAY_API_KEY is not set or is a placeholder. Pixabay image fetches will fail.")
+    if not CLOUDINARY_CLOUD_NAME or CLOUDINARY_CLOUD_NAME == "YOUR_CLOUDINARY_CLOUD_NAME" or \
+       not CLOUDINARY_API_KEY or CLOUDINARY_API_KEY == "YOUR_CLOUDINARY_API_KEY" or \
+       not CLOUDINARY_API_SECRET or CLOUDINARY_API_SECRET == "YOUR_CLOUDINARY_API_SECRET":
+        warnings.append("Cloudinary API credentials are not set or are placeholders. Image upload will fail.")
+    if not FB_PAGE_ACCESS_TOKEN or FB_PAGE_ACCESS_TOKEN == "YOUR_FB_PAGE_ACCESS_TOKEN" or \
+       not INSTAGRAM_BUSINESS_ACCOUNT_ID or INSTAGRAM_BUSINESS_ACCOUNT_ID == "YOUR_INSTAGRAM_BUSINESS_ACCOUNT_ID":
+        warnings.append("Instagram Graph API credentials are not set or are placeholders. Instagram posting will fail.")
     if not os.path.exists("fonts/AlfaSlabOne-Regular.ttf"):
         warnings.append("Font file 'AlfaSlabOne-Regular.ttf' not found in 'fonts/' directory. Using fallback font.")
     if not os.path.exists("fonts/Tapestry-Regular.ttf"):
@@ -1578,11 +1557,11 @@ def check_api_keys():
         print("----------------------------------------\n")
 
 # --- Main Workflow Execution ---
-def run_workflow(): # Wrapped main logic in a function
-    # Moved object instantiation inside run_workflow
+def run_workflow():
     workflow_manager = WorkflowStateManager()
     news_fetcher = NewsFetcher()
     text_processor = TextProcessor()
+    image_generator = ImageGenerator(HUGGING_FACE_TOKEN, INFERENCE_API_ENDPOINTS) # NEW
     image_fetcher = ImageFetcher()
     image_local_processor = ImageLocalProcessor()
     caption_generator = CaptionGenerator()
@@ -1592,14 +1571,9 @@ def run_workflow(): # Wrapped main logic in a function
 
     ai_client_for_analysis = OpenAI(
         base_url="https://openrouter.ai/api/v1",
-        api_key=OPENROUTER_DEEPSEEK_R1_API_KEY, # This should be correct now
+        api_key=OPENROUTER_DEEPSEEK_R1_API_KEY,
     )
 
-    # All these operations were already wrapped in try-except in run_workflow()
-    # The crucial fix is how `local_saver.save_post` gets `workflow_manager`
-    # And ensuring consistent returns/exits.
-
-    # Internal Content Style Analysis (weekly)
     current_style_recommendations = _load_analysis_results(STYLE_RECOMMENDATIONS_FILE)
     recommendation_text_for_llm = current_style_recommendations.get('weekly_analysis', '')
 
@@ -1616,7 +1590,6 @@ def run_workflow(): # Wrapped main logic in a function
             import traceback
             traceback.print_exc()
 
-    # Internal Instagram Post Performance Analysis (every 3 days)
     if workflow_manager.should_run_instagram_analysis():
         print("Time to run internal Instagram post performance analysis...")
         try:
@@ -1627,7 +1600,6 @@ def run_workflow(): # Wrapped main logic in a function
             import traceback
             traceback.print_exc()
 
-    # Conceptual External Instagram Content Analysis (weekly)
     if workflow_manager.should_run_external_instagram_analysis():
         print("Time to run conceptual external Instagram content analysis...")
         try:
@@ -1650,21 +1622,19 @@ def run_workflow(): # Wrapped main logic in a function
 
     print(f"\n--- Processing Post {post_number_for_this_run}/{len(CONTENT_TYPE_CYCLE)} (Type: {content_type_for_this_run.replace('_', ' ').title()}) ---")
 
-    post_to_process = {'type': content_type_for_this_run, 'content_type_display': content_type_for_this_run} # Initialize for all post types
-    fetched_pil_image = None # Initialize fetched_pil_image outside the if/else
+    post_to_process = {'type': content_type_for_this_run, 'content_type_display': content_type_for_this_run}
+    final_pil_image = None
 
-    # NEW: Function to generate motivational quote using AI
     def generate_motivational_quote_with_ai(content_hint: str, ai_client_instance: OpenAI, api_key: str, site_url: str, site_name: str):
-        """Generates a motivational quote and author using AI."""
-        if api_key == "sk-or-v1-YOUR_OPENROUTER_DEEPSEEK_API_KEY": # Use the correct placeholder check
-            print("OPENROUTER_API_KEY for Deepseek Chat is a placeholder. Skipping AI quote generation.")
+        if not api_key or api_key == "sk-or-v1-YOUR_DEEPSEEK_CHAT_API_KEY_HERE":
+            print("OPENROUTER_API_KEY for Deepseek Chat is not set or is a placeholder. Skipping AI quote generation.")
             return {"quote": "The only way to do great work is to love what you do.", "author": "Steve Jobs (Fallback)"}
 
         system_message = f"""
         You are a creative AI assistant specializing in generating concise and impactful motivational quotes for social media.
-        Your task is to create an original motivational quote and attribute it to a relevant, inspiring figure (real or conceptual, e.g., "A Visionary", "The Innovator", "Anonymous").
+        Your task is to create an original motivational quote and attribute it to a relevant, inspiring figure (real or conceptual).
         The quote should be highly relevant to the theme of {content_hint.replace('_', ' ').title()}.
-        The quote should be short, impactful, and easily digestible for an Instagram post. Aim for 15-25 words.
+        The quote should be short, impactful, and easily digestible. Aim for 15-25 words.
         Return ONLY a JSON object with two keys: "quote" (string) and "author" (string).
         """
         user_message = f"""
@@ -1682,10 +1652,10 @@ def run_workflow(): # Wrapped main logic in a function
                     "HTTP-Referer": site_url,
                     "X-Title": site_name,
                 },
-                model=OPENROUTER_MODEL, # Use the general OPENROUTER_MODEL for content generation
+                model=OPENROUTER_MODEL,
                 messages=messages,
-                temperature=0.9, # Higher temperature for creativity
-                max_tokens=100, # Keep response concise
+                temperature=0.9,
+                max_tokens=100,
                 response_format={"type": "json_object"}
             )
             if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
@@ -1694,8 +1664,7 @@ def run_workflow(): # Wrapped main logic in a function
                     parsed_data = json.loads(ai_content_str)
                     quote = parsed_data.get('quote', "Innovation is seeing what everybody has seen and thinking what nobody else has thought.")
                     author = parsed_data.get('author', "An Innovator")
-                    # Basic word count check for quotes
-                    if len(quote.split()) > 30: # Limit generated quote length
+                    if len(quote.split()) > 30:
                         quote = ' '.join(quote.split()[:30]) + "..."
                     return {"quote": quote, "author": author}
                 except json.JSONDecodeError:
@@ -1709,40 +1678,36 @@ def run_workflow(): # Wrapped main logic in a function
 
     if content_type_for_this_run == 'motivational_quote_post':
         print("Generating a Motivational Quote Post...")
-        # Use AI to generate the quote
-        # Pass the content type as a hint for the AI
         quote_content_hint = random.choice(['startup', 'business', 'financial', 'entrepreneurial', 'technology'])
         generated_quote_data = generate_motivational_quote_with_ai(
             content_hint=quote_content_hint,
-            ai_client_instance=text_processor.client, # Reuse text_processor's client for Deepseek Chat
+            ai_client_instance=text_processor.client,
             api_key=OPENROUTER_API_KEY,
             site_url=OPENROUTER_SITE_URL,
             site_name=OPENROUTER_SITE_NAME
         )
         post_to_process['quote_text'] = generated_quote_data['quote']
         post_to_process['quote_author'] = generated_quote_data['author']
-        post_to_process['title'] = generated_quote_data['quote'] # Use quote as title for consistency in metadata
-        post_to_process['summary'] = generated_quote_data['author'] # Use author as summary for consistency in metadata
+        post_to_process['title'] = generated_quote_data['quote']
+        post_to_process['summary'] = generated_quote_data['author']
         post_to_process['storytelling_method'] = 'Motivational Quote'
-        # For quote posts, the 'image' is just a placeholder to pass to the processor, which then draws the background
-        fetched_pil_image = Image.new('RGB', (CANVAS_WIDTH, IMAGE_DISPLAY_HEIGHT), color=(251, 234, 231))
-        post_to_process['image_status'] = 'generated_placeholder'
+        final_pil_image = Image.new('RGB', (CANVAS_WIDTH, IMAGE_DISPLAY_HEIGHT), color=(251, 234, 231))
+        post_to_process['image_source'] = 'generated_background'
 
-    else: # It's a news post (startup, business, financial, entrepreneurial)
+    else:
         news_item = news_fetcher.get_single_content_item(content_type_for_this_run)
 
         if not news_item:
-            print(f"No recent news available for '{content_type_for_this_run.replace('_', ' ').title()}' after all attempts. Skipping post creation for this cycle.")
+            print(f"No recent news available for '{content_type_for_this_run.replace('_', ' ').title()}' after all attempts. Skipping post creation.")
             workflow_manager.increment_post_type_index()
-            return # Use return False to signal failure, not sys.exit(0)
+            return
 
-        post_to_process.update(news_item) # Add news item data to post_to_process
+        post_to_process.update(news_item)
         post_to_process['original_description'] = post_to_process.get('description', 'N/A')
 
         print(f"Original Title: {post_to_process.get('title', 'N/A')}")
         print(f"Original Description: {post_to_process.get('description', 'N/A')[:100]}...")
 
-        # 1. Summarize and Enhance Text (OpenRouter - Deepseek) with Storytelling
         short_title, summary, storytelling_method_used, text_process_success = text_processor.process_text(
             post_to_process.get('title', ''),
             post_to_process.get('description', ''),
@@ -1751,9 +1716,9 @@ def run_workflow(): # Wrapped main logic in a function
         )
 
         if not text_process_success:
-            print(f"Deepseek text processing failed for this post. Skipping post creation for this cycle.")
+            print(f"Deepseek text processing failed for this post. Skipping post creation.")
             workflow_manager.increment_post_type_index()
-            return # Use return False to signal failure
+            return
 
         post_to_process['title'] = short_title
         post_to_process['summary'] = summary
@@ -1764,45 +1729,54 @@ def run_workflow(): # Wrapped main logic in a function
         print(f"Generated Short Title (Storytelling: {storytelling_method_used}): {short_title}")
         print(f"Generated Summary: {summary}")
 
-        # 2. Fetch Relevant Image for News Post
-        image_search_prompt = f"{short_title} {summary} {content_type_for_this_run.replace('_', '')}" # Removed space in replace for consistency
-        print(f"Fetching image for: {image_search_prompt[:80]}...")
-        fetched_pil_image = image_fetcher.fetch_image(image_search_prompt)
+        # --- MODIFIED: Image Generation/Fetching Logic for News Posts ---
+        image_search_prompt = f"professional photograph of {short_title}, {summary}, {content_type_for_this_run.replace('_', ' ')}, cinematic, high detail"
+        
+        # 1. First, try to GENERATE an image from Hugging Face
+        print("\nAttempting to generate image using Hugging Face models...")
+        final_pil_image = image_generator.generate_image_from_hf(image_search_prompt)
+        if final_pil_image:
+            post_to_process['image_source'] = 'HuggingFace-Generated'
+        
+        # 2. If generation fails, FALLBACK to fetching an image from APIs
+        if final_pil_image is None:
+            print("\nImage generation failed or was skipped. Falling back to fetching image from stock photo APIs...")
+            final_pil_image = image_fetcher.fetch_image(image_search_prompt)
+            if final_pil_image:
+                post_to_process['image_source'] = 'API-Fetched'
 
-        if fetched_pil_image is None:
-            print(f"No relevant image found from any source for prompt: {image_search_prompt}. Generating placeholder image.")
-            fetched_pil_image = Image.new('RGB', (CANVAS_WIDTH, IMAGE_DISPLAY_HEIGHT), color=(70, 70, 70))
-            draw_placeholder = ImageDraw.Draw(fetched_pil_image)
+        # 3. If both generation and fetching fail, create a placeholder
+        if final_pil_image is None:
+            print(f"\nNo relevant image found from any source for prompt: '{image_search_prompt[:80]}...'. Generating placeholder.")
+            final_pil_image = Image.new('RGB', (IMAGE_DISPLAY_WIDTH, IMAGE_DISPLAY_HEIGHT), color=(70, 70, 70))
+            draw_placeholder = ImageDraw.Draw(final_pil_image)
             fallback_font = load_font(FONT_PATH_ALFA_SLAB_ONE, 50)
             text_to_draw = "IMAGE NOT AVAILABLE"
             text_bbox = draw_placeholder.textbbox((0,0), text_to_draw, font=fallback_font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
-            draw_placeholder.text(((CANVAS_WIDTH - text_width) / 2, (IMAGE_DISPLAY_HEIGHT - text_height) / 2),
+            draw_placeholder.text(((IMAGE_DISPLAY_WIDTH - text_width) / 2, (IMAGE_DISPLAY_HEIGHT - text_height) / 2),
                                   text_to_draw, font=fallback_font, fill=COLOR_SOURCE_TEXT)
-            post_to_process['image_status'] = 'placeholder'
-        else:
-            post_to_process['image_status'] = 'fetched'
+            post_to_process['image_source'] = 'placeholder'
+        # --- END MODIFIED LOGIC ---
 
 
-    # 3. Overlay Text on Image and Compose Final Post
     print("Composing final post image with overlays...")
-    final_post_image = image_local_processor.overlay_text(fetched_pil_image, {
-        'title': post_to_process.get('title', ''), # For news, this is short_title; for quotes, this is quote_text
-        'summary': post_to_process.get('summary', ''), # For news, this is summary; for quotes, this is author
+    final_post_image = image_local_processor.overlay_text(final_pil_image, {
+        'title': post_to_process.get('title', ''),
+        'summary': post_to_process.get('summary', ''),
         'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        'source': post_to_process.get('source', 'Unknown Source') if 'source' in post_to_process else 'N/A', # Add check for 'source' key
+        'source': post_to_process.get('source', 'Unknown Source') if 'source' in post_to_process else 'N/A',
         'content_type_display': post_to_process.get('type')
     })
     post_to_process['final_image'] = final_post_image
 
-    # 4. Generate Caption + Hashtags (Mistral via OpenRouter)
     print("Generating caption and hashtags with Mistral...")
     instagram_caption, instagram_hashtags, caption_success = caption_generator.generate_caption_and_hashtags(
-        post_to_process['title'], # For news, this is short_title; for quotes, this is quote_text
-        post_to_process['summary'], # For news, this is summary; for quotes, this is author
+        post_to_process['title'],
+        post_to_process['summary'],
         post_to_process.get('storytelling_method', 'N/A'),
-        post_to_process['type'], # Pass post_type to caption generator for custom prompts
+        post_to_process['type'],
         style_recommendations=recommendation_text_for_llm
     )
 
@@ -1812,12 +1786,9 @@ def run_workflow(): # Wrapped main logic in a function
     print(f"Generated Instagram Caption: {instagram_caption[:100]}...")
     print(f"Generated Hashtags: {', '.join(instagram_hashtags)}")
 
-    # 5. Save All Results Locally - Pass workflow_manager_instance here
     print("Saving post metadata and local image...")
-    local_saver.save_post(post_to_process, workflow_manager) # Pass workflow_manager here
+    local_saver.save_post(post_to_process, workflow_manager)
 
-
-    # 6. Upload image to Cloudinary
     cloudinary_media_url = None
     media_to_upload_path = os.path.join(IMAGE_OUTPUT_DIR, f"{post_to_process['Post_ID']}.png")
     if post_to_process['final_image'] and os.path.exists(media_to_upload_path):
@@ -1829,22 +1800,20 @@ def run_workflow(): # Wrapped main logic in a function
         )
         post_to_process['cloudinary_url'] = cloudinary_media_url
     else:
-        print("Skipping Cloudinary upload: No valid local image found at path or image not generated.")
-        post_to_process['cloudinary_url'] = "N/A - Image not uploaded"
+        print("Skipping Cloudinary upload: No valid local media found.")
+        post_to_process['cloudinary_url'] = "N/A - Media not uploaded"
 
 
-    # 7. Post to Instagram
     if cloudinary_media_url:
         print("Attempting to post to Instagram...")
         combined_caption = f"{post_to_process['seo_caption']}\n\n{' '.join(post_to_process['hashtags'])}"
         instagram_post_success = instagram_poster.post_image(cloudinary_media_url, combined_caption)
         post_to_process['instagram_posted'] = instagram_post_success
     else:
-        print("Skipping Instagram post: No Cloudinary image URL available.")
+        print("Skipping Instagram post: No Cloudinary media URL available.")
         post_to_process['instagram_posted'] = False
 
 
-    # Final state update and exit
     if 'final_image' in post_to_process:
         del post_to_process['final_image']
 
@@ -1853,9 +1822,11 @@ def run_workflow(): # Wrapped main logic in a function
 
 
 if __name__ == "__main__":
+    check_api_keys()
     try:
         run_workflow()
     except Exception as e:
         print(f"\nCritical error during workflow execution: {e}")
-        print("Exiting application due to critical error.")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
